@@ -1,50 +1,35 @@
 require 'digest/md5'
 
 module StackProf
-  class DumpReader
+  class DumpMerger
     class << self
-      def read(path)
-        self.new.batch_read([path])
-      end
-
-      def batch_read(paths)
-        self.new.batch_read(paths)
+      def merge_raw_dumps(dumps)
+        self.new.merge_raw_dumps(dumps)
       end
     end
 
-    def batch_read(paths)
-      raw_reports = paths.map do |path|
-        begin
-          Marshal.load(IO.binread(path))
-        rescue TypeError => e
-          STDERR.puts "** error parsing #{file}: #{e.inspect}"
-        end
-      end
-
-      raw_merged = merge_raw_reports(raw_reports)
-      StackProf::Report.new(raw_merged)
-    end
-
-    def merge_raw_reports(reports, aggressive: false)
+    def merge_raw_dumps(dumps, aggressive: true)
       # sanity checks
-      raise ArgumentError, "cannot combine different versions of dumps" if reports.map {|r| r[:version]}.uniq.size > 1
-      raise ArgumentError, "cannot combine different modes" if reports.map {|r| r[:mode]}.uniq.size > 1
+      raise ArgumentError, "cannot combine different versions of dumps" if dumps.map {|r| r[:version]}.uniq.size > 1
+      raise ArgumentError, "cannot combine different modes" if dumps.map {|r| r[:mode]}.uniq.size > 1
 
-      frames = reports.map {|r| r[:frames]}.inject(&:merge)
-      raws = reports.map {|r| r[:raw]}.concat.flatten.compact
-      frames, raws = merge_frames_by_name(frames, raws)
+      frames = dumps.map {|r| r[:frames]}.inject(&:merge)
+      raws = dumps.map {|r| r[:raw]}.concat.flatten.compact
+      if aggressive
+        frames, raws = aggressive_merge(frames, raws)
+      end
       raws = merge_duplicate_raw_segments(raws)
 
       data = {
-        version: reports[0][:version],
-        mode: reports[0][:mode],
-        interval: reports[0][:interval],
-        samples: reports.map {|r| r[:samples]}.sum,
-        gc_samples: reports.map {|r| r[:gc_samples]}.sum,
-        missed_samples: reports.map {|r| r[:missed_samples]}.sum,
+        version: dumps[0][:version],
+        mode: dumps[0][:mode],
+        interval: dumps[0][:interval],
+        samples: dumps.map {|r| r[:samples]}.sum,
+        gc_samples: dumps.map {|r| r[:gc_samples]}.sum,
+        missed_samples: dumps.map {|r| r[:missed_samples]}.sum,
         frames: frames,
         raw: raws,
-        # raw_timestamp_deltas: reports.map {|r| r[:raw_timestamp_deltas]}.concat.flatten.compact,  # is this correct?
+        # raw_timestamp_deltas: dumps.map {|r| r[:raw_timestamp_deltas]}.concat.flatten.compact,  # is this correct?
       }
 
       data
@@ -84,10 +69,12 @@ module StackProf
       Digest::MD5.hexdigest("#{frame[:name]}@#{frame[:file]}:#{frame[:line]}")
     end
 
-    def merge_frames_by_name(frames, raw_array = [])
+    # The 'aggressive' merge mode allows merging dumps coming from different processes.
+    # In this mode, stackframes are aggregated by their method names only, and ISeq pointers will be
+    # overwritten as if they came from a single process.
+    def aggressive_merge(frames, raw_array = [])
       seen_frames = {}
       rename_table = {}
-
 
       frames.each do |iseq_ptr, frame|
         normalized_name = normalized_frame_name(frame)
