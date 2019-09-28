@@ -38,16 +38,17 @@ end
 parser.parse!
 parser.abort(parser.help) if ARGV.empty?
 
-reports = []
+dumps = []
 while ARGV.size > 0
   begin
     file = ARGV.pop
-    reports << StackProf::Report.new(Marshal.load(IO.binread(file)))
+    dumps << Marshal.load(IO.binread(file))
   rescue TypeError => e
     STDERR.puts "** error parsing #{file}: #{e.inspect}"
   end
 end
-report = reports.inject(:+)
+dump = StackProf::DumpMerger.merge_raw_dumps(dumps)
+report = StackProf::Report.new(dump)
 
 default_options = {
   :format => :text,

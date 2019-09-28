@@ -139,7 +139,7 @@ module StackProf
       end
     end
 
-    def +(other)
+    def merge(other)
       raise ArgumentError, "cannot combine #{other.class}" unless self.class == other.class
       raise ArgumentError, "cannot combine #{modeline} with #{other.modeline}" unless modeline == other.modeline
       raise ArgumentError, "cannot combine v#{version} with v#{other.version}" unless version == other.version
@@ -184,6 +184,8 @@ module StackProf
 
       self.class.new(data)
     end
+
+    alias_method :+, :merge
 
     private
     def root_frames
