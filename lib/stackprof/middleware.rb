@@ -47,7 +47,7 @@ module StackProf
           is_directory = path != path.chomp('/')
 
           if is_directory
-            filename = "stackprof-#{results[:mode]}-#{Process.pid}-#{Time.now.to_i}.dump"
+            filename = "stackprof-#{results[:mode]}-#{Process.pid}-#{Time.now.to_i}-#{rand(36 ** 4).to_s(36)}.dump"
           else
             filename = File.basename(path)
             path = File.dirname(path)
